@@ -11,16 +11,56 @@
 #![warn(unused_results)]
 
 extern crate num_traits;
+extern crate alga;
 
 use num_traits::{One, Zero};
-use std::ops::{Add, Mul, Neg, Sub};
+use std::ops::{Add, Mul, Neg, Sub, AddAssign, SubAssign, MulAssign};
 use std::{cmp, fmt};
+use alga::general::*;
 
 /// Polynomial expression
 #[derive(Eq, PartialEq, Clone, Debug)]
 pub struct Polynomial<T> {
     data: Vec<T>,
 }
+
+// New implementations from fork: Implement alga traits
+
+impl<T: Ring> Identity<Additive> for Polynomial<T> {
+    fn identity() -> Self {
+        <Self as One>::one()
+    }
+}
+impl<T: Ring> AbstractMagma<Additive> for Polynomial<T> {
+    fn operate(&self, right: &Self) -> Self {
+        self + right
+    }
+}
+impl<T: Ring> AbstractSemigroup<Additive> for Polynomial<T> {}
+impl<T: Ring> AbstractMonoid<Additive> for Polynomial<T> {}
+impl<T: Ring> TwoSidedInverse<Additive> for Polynomial<T> {
+    fn two_sided_inverse(&self) -> Self {
+        -self
+    }
+}
+impl<T: Ring> AbstractQuasigroup<Additive> for Polynomial<T> {}
+impl<T: Ring> AbstractLoop<Additive> for Polynomial<T> {}
+impl<T: Ring> AbstractGroup<Additive> for Polynomial<T> {}
+impl<T: Ring> AbstractGroupAbelian<Additive> for Polynomial<T> {}
+impl<T: Ring> Identity<Multiplicative> for Polynomial<T> {
+    fn identity() -> Self {
+        <Self as Zero>::zero()
+    }
+}
+impl<T: Ring> AbstractMagma<Multiplicative> for Polynomial<T> {
+    fn operate(&self, right: &Self) -> Self {
+        self * right
+    }
+}
+impl<T: Ring> AbstractSemigroup<Multiplicative> for Polynomial<T> {}
+impl<T: Ring> AbstractMonoid<Multiplicative> for Polynomial<T> {}
+impl<T: Ring> AbstractRing<Additive, Multiplicative> for Polynomial<T> {}
+// impl<T: Ring> Ring for Polynomial<T> {} // (implicit)
 
 impl<T: Zero> Polynomial<T> {
     /// Creates new `Polynomial`.
@@ -238,6 +278,16 @@ where
     }
 }
 
+impl<T> AddAssign<Polynomial<T>> for Polynomial<T>
+where
+    T: Zero + Add<T, Output=T> + Clone,
+    <T as Add<T>>::Output: Zero,
+{
+    fn add_assign(&mut self, other: Polynomial<T>) {
+        *self = self.clone() + other
+    }
+}
+
 forward_all_binop!(impl Sub, sub);
 
 impl<'a, 'b, Lhs, Rhs> Sub<&'b Polynomial<Rhs>> for &'a Polynomial<Lhs>
@@ -266,6 +316,16 @@ where
             }
         }
         Polynomial::new(sub)
+    }
+}
+
+impl<T> SubAssign<Polynomial<T>> for Polynomial<T>
+where
+    T: Zero + Sub<T, Output=T> + Clone,
+    <T as Sub<T>>::Output: Zero,
+{
+    fn sub_assign(&mut self, other: Polynomial<T>) {
+        *self = self.clone() - other
     }
 }
 
@@ -298,6 +358,16 @@ where
             })
             .collect();
         Polynomial::new(prod)
+    }
+}
+
+impl<T> MulAssign<Polynomial<T>> for Polynomial<T>
+where
+    T: Zero + Mul<T, Output=T> + Clone,
+    <T as Mul<T>>::Output: Zero,
+{
+    fn mul_assign(&mut self, other: Polynomial<T>) {
+        *self = self.clone() * other
     }
 }
 
