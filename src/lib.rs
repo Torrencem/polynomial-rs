@@ -13,8 +13,8 @@
 extern crate num_traits;
 extern crate alga;
 
-use num_traits::{One, Zero};
-use std::ops::{Add, Mul, Neg, Sub, AddAssign, SubAssign, MulAssign};
+use num_traits::{One, Zero, PrimInt};
+use std::ops::{Add, Mul, Div, Neg, Sub, AddAssign, SubAssign, MulAssign, DivAssign};
 use std::{cmp, fmt};
 use alga::general::*;
 
@@ -75,7 +75,7 @@ impl<T: Zero> Polynomial<T> {
         while let Some(true) = data.last().map(|x| x.is_zero()) {
             let _ = data.pop();
         }
-        Polynomial { data: data }
+        Polynomial { data }
     }
 }
 
@@ -106,6 +106,102 @@ impl<T> Polynomial<T> {
     #[inline]
     pub fn data(&self) -> &[T] {
         &self.data
+    }
+
+    /// Gets the degree of the polynomial.
+    #[inline]
+    pub fn degree(&self) -> usize {
+        if self.data.len() == 0 {
+            0
+        } else {
+            self.data.len() - 1
+        }
+    }
+    
+    /// Multiply the polynomial by a constant
+    pub fn mul_constant<V: Mul<T> + Clone>(self, constant: V) -> Polynomial<<V as Mul<T>>::Output> {
+        Polynomial {
+            data: self.data.into_iter()
+                .map(|val| constant.clone() * val)
+                .collect()
+        }
+    }
+
+    /// Divide the polynomial by a constant
+    pub fn div_constant<V: Clone>(self, constant: V) -> Polynomial<<T as Div<V>>::Output> 
+    where T: Div<V> {
+        Polynomial {
+            data: self.data.into_iter()
+                .map(|val| val / constant.clone())
+                .collect()
+        }
+    }
+
+    /// Add a constant to the polynomial
+    pub fn add_constant<V>(mut self, constant: V) -> Polynomial<T>
+    where T: AddAssign<V> {
+        let l = self.data.len();
+        self.data[l - 1] += constant;
+        self
+    }
+}
+
+impl<T: Clone> Polynomial<T> {
+    /// Add a constant to a reference to the polynomial
+    pub fn add_constant_ref<V>(&self, constant: V) -> Polynomial<T> 
+    where T: AddAssign<V> {
+        let mut data = self.data.clone();
+        data[self.data.len() - 1] += constant;
+        Polynomial { data }
+    }
+    
+    /// Multiply a reference to the polynomial by a constant
+    pub fn mul_constant_ref<V: Mul<T> + Clone>(&self, constant: V) -> Polynomial<<V as Mul<T>>::Output> {
+        Polynomial {
+            data: self.data.iter()
+                .cloned()
+                .map(|val| constant.clone() * val)
+                .collect()
+        }
+    }
+
+    /// Divide a reference to the polynomial by a constant
+    pub fn div_constant_ref<V: Clone>(&self, constant: V) -> Polynomial<<T as Div<V>>::Output>
+    where T: Div<V>
+    {
+        Polynomial {
+            data: self.data.iter()
+                .cloned()
+                .map(|val| val / constant.clone())
+                .collect()
+        }
+    }
+}
+
+impl<T: Clone + Zero + Eq> Polynomial<T> {
+    /// Get the leading coefficient of the polynomial.
+    pub fn lc(&self) -> T {
+        self.data.iter()
+            .find(|&val| *val != Zero::zero())
+            .cloned()
+            .unwrap_or(Zero::zero())
+    }
+}
+
+impl<T: Clone + EuclideanDomain + Zero> Polynomial<T> {
+    /// Get the content (gcd of coefficients) of the polynomial.
+    pub fn cont(&self) -> T {
+        if self.data.len() == 0 {
+            return Zero::zero();
+        }
+        if self.data.len() == 1 {
+            return self.data[0].clone();
+        }
+        let mut result = self.data[0].clone();
+        for i in 1..self.data.len() {
+            result = gcd(result, self.data[i].clone());
+        }
+        result
     }
 }
 
@@ -388,6 +484,231 @@ impl<T: Zero + One + Clone> One for Polynomial<T> {
         Polynomial {
             data: vec![One::one()],
         }
+    }
+}
+
+/// Elements of a Euclidean Domain are elements of a ring with a division algorithm and GCD
+/// EuclideanDomain can be implemented for Fields with gcd 1 to work with certain algorithms
+pub trait EuclideanDomain: Ring + ClosedDiv {
+    /// Returns the modulus of two elements from the division algorithm
+    fn modulus(self, other: Self) -> Self;
+    /// Take the gcd of two elements
+    fn gcd(self, other: Self) -> Self;
+    /// Take a multiplicative power of an element (using exponentiation by squaring algorithm)
+    fn pow(mut self, mut power: u32) -> Self {
+        // https://en.wikipedia.org/wiki/Exponentiation_by_squaring
+        if power == 0 {
+            return Self::one();
+        }
+        let mut y = Self::one();
+        while power > 1 {
+            if power & 1 == 0 {
+                self = self.clone() * self.clone();
+                power >>= 1;
+            } else {
+                y = self.clone() * y;
+                self = self.clone() * self.clone();
+                power = (power - 1) >> 1;
+            }
+        }
+        self * y
+    }
+    /// Optional: Helpful when displaying and debugging
+    fn is_positive(&self) -> Option<bool> {
+        None
+    }
+    /// Optional: Helpful when displaying and debugging
+    fn is_negative(&self) -> Option<bool> {
+        None
+    }
+    
+    /// Returns if an element is a unit in the Euclidean Domain
+    fn is_unit(&self) -> bool {
+        // Check if self has a mult. inverse in our ED
+        //              vvv  gives only the quotient
+        self.clone() * (Self::one() / self.clone()) == Self::one()
+    }
+
+}
+
+impl<T: Ring + ClosedDiv + PrimInt> EuclideanDomain for T {
+    fn modulus(self, other: Self) -> Self {
+        self % other
+    }
+
+    fn gcd(mut self, mut b: Self) -> Self {
+        if self < b {
+            std::mem::swap(&mut self, &mut b);
+        }
+        while !b.is_zero() {
+            self = self.modulus(b);
+            std::mem::swap(&mut self, &mut b);
+        }
+        self
+    }
+
+    fn is_positive(&self) -> Option<bool> {
+        Some(self > &Self::zero())
+    }
+
+    fn is_negative(&self) -> Option<bool> {
+        Some(self < &Self::zero())
+    }
+}
+
+/// Computes the GCD of two elements of a EuclideanDomain
+pub fn gcd<Int: EuclideanDomain>(a: Int, b: Int) -> Int {
+    a.gcd(b)
+}
+
+/// Computes the LCM of two elements of a EuclideanDomain
+pub fn lcm<Int: EuclideanDomain>(a: Int, b: Int) -> Int {
+    // quick optimization
+    if a == b {
+        a
+    } else {
+        a.clone() * b.clone() / gcd(a, b)
+    }
+}
+
+// From fork: Pseudo division algorithm
+
+/// Compute the pseudo-division of two polynomials. Algorithm 3.1.2 from the book.
+pub fn pseudo_div<T: EuclideanDomain + Eq + Clone>(a_poly: Polynomial<T>, b_poly: Polynomial<T>) -> (Polynomial<T>, Polynomial<T>)
+{
+    // TODO: Fix this
+    assert!(a_poly.degree() >= b_poly.degree());
+
+    if b_poly.degree() == 0 {
+        return (a_poly, Polynomial::zero());
+    }
+    let mut q = Polynomial::zero();
+    let mut e = a_poly.degree() - b_poly.degree() + 1;
+    let mut r = a_poly;
+
+    let d = b_poly.lc();
+
+    while r.degree() >= b_poly.degree() {
+        let x_degr_minus_degd = {
+            let deg = r.degree() - b_poly.degree();
+            let mut v = vec![T::zero(); deg];
+            let mut x = vec![T::one()];
+            x.append(&mut v);
+            Polynomial {data: x}
+        };
+        let s = x_degr_minus_degd.mul_constant(r.lc());
+        q = q.mul_constant(d.clone()) + s.clone();
+        r = r.mul_constant(d.clone()) - b_poly.clone() * s.clone();
+        if e != 0 {
+            e = e - 1;
+        }
+    }
+
+    (q.mul_constant(d.clone().pow(e as u32)), r.mul_constant(d.clone().pow(e as u32)))
+}
+
+/// Compute the gcd and bezout coefficients
+pub fn extended_gcd<T: EuclideanDomain + Eq + Clone>(a_poly: Polynomial<T>, b_poly: Polynomial<T>) -> (Polynomial<T>, Polynomial<T>, Polynomial<T>) {
+    // TODO: Fix this
+    assert!(a_poly.degree() >= b_poly.degree());
+
+    let mut r_prev = a_poly;
+    let mut r = b_poly;
+    let mut s_prev = Polynomial { data: vec![One::one()] };
+    let mut s = Polynomial { data: vec![Zero::zero()] };
+    let mut t_prev = Polynomial { data: vec![Zero::zero()] };
+    let mut t = Polynomial { data: vec![One::one()] };
+
+    while r.degree() != 0 {
+        let (q, _) = pseudo_div(r_prev.clone(), r.clone());
+        let d = r.lc();
+        let e = r_prev.degree() - r.degree() + 1;
+        let new_r = r_prev.mul_constant_ref(d.clone().pow(e as u32)) - q.clone() * r.clone();
+        let new_s = s_prev.mul_constant_ref(d.clone().pow(e as u32)) - q.clone() * s.clone();
+        let new_t = t_prev.mul_constant_ref(d.clone().pow(e as u32)) - q.clone() * t.clone();
+        r_prev = r.clone();
+        r = new_r;
+        s_prev = s.clone();
+        s = new_s;
+        t_prev = t.clone();
+        t = new_t;
+    }
+    
+    // (u, v, gcd)
+    (s, t, r)
+}
+
+/// Compute the resultant of two polynomials
+pub fn resultant<T: EuclideanDomain + Eq + Clone>(a_poly: Polynomial<T>, b_poly: Polynomial<T>) -> T {
+    // TODO: Fix this
+    assert!(a_poly.degree() >= b_poly.degree());
+
+    let a = a_poly.cont();
+    let b = b_poly.cont();
+    let mut a_poly = a_poly.div_constant(a.clone());
+    let mut b_poly = b_poly.div_constant(b.clone());
+    let mut g = T::one();
+    let mut h = T::one();
+    let mut s = T::one();
+    let t = a.pow(b_poly.degree() as u32) * b.pow(a_poly.degree() as u32);
+    if a_poly.degree() % 2 == 1 && b_poly.degree() % 2 == 1 {
+        s = -s;
+    }
+    loop {
+        let delta = a_poly.degree() - b_poly.degree();
+        let (_q, r) = pseudo_div(a_poly.clone(), b_poly.clone());
+        a_poly = b_poly;
+        b_poly = r.div_constant(g.clone() * h.clone().pow(delta as u32));
+        g = a_poly.lc();
+        h = h.clone().pow(1 - delta as u32) * g.clone().pow(delta as u32);
+        if b_poly.degree() == 0 {
+            h = h.clone().pow(1 - a_poly.degree() as u32) * b_poly.lc().pow(a_poly.degree() as u32);
+            return s * t * h;
+        }
+    }
+}
+
+impl<T> Div<Polynomial<T>> for Polynomial<T>
+where
+    T: EuclideanDomain + Clone + Eq
+{
+    type Output = Polynomial<T>;
+
+    fn div(self, other: Polynomial<T>) -> Polynomial<T> {
+        pseudo_div(self.clone(), other.clone()).0
+    }
+}
+
+impl<'a, 'b, T> Div<&'b Polynomial<T>> for &'a Polynomial<T>
+where
+    T: EuclideanDomain + Clone + Eq
+{
+    type Output = Polynomial<T>;
+
+    fn div(self, other: &Polynomial<T>) -> Polynomial<T> {
+        pseudo_div(self.clone(), other.clone()).0
+    }
+}
+
+impl<T> DivAssign<Polynomial<T>> for Polynomial<T>
+where
+    T: EuclideanDomain + Clone + Eq
+{
+    fn div_assign(&mut self, other: Polynomial<T>) {
+        *self = self.clone() / other;
+    }
+}
+
+impl<T> EuclideanDomain for Polynomial<T>
+where
+    T: EuclideanDomain + Clone + Eq
+{
+    fn modulus(self, other: Self) -> Self {
+        pseudo_div(self, other).1
+    }
+
+    fn gcd(self, other: Self) -> Self {
+        extended_gcd(self, other).2
     }
 }
 
