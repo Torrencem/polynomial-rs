@@ -19,7 +19,7 @@ use std::{cmp, fmt};
 use alga::general::*;
 
 /// Polynomial expression
-#[derive(Eq, PartialEq, Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Polynomial<T> {
     data: Vec<T>,
 }
@@ -130,8 +130,7 @@ impl<T> Polynomial<T> {
     /// Add a constant to the polynomial
     pub fn add_constant<V>(mut self, constant: V) -> Polynomial<T>
     where T: AddAssign<V> {
-        let l = self.data.len();
-        self.data[l - 1] += constant;
+        self.data[0] += constant;
         self
     }
 }
@@ -143,7 +142,7 @@ impl<T: Zero + Eq + Clone> Polynomial<T> {
         if self.data.len() == 0 {
             0
         } else {
-            self.data.len() - 1 - self.data.iter().cloned().position(|val| val != T::zero()).unwrap_or(0)
+            self.data.len() - 1 - self.data.iter().rev().cloned().position(|val| val != T::zero()).unwrap_or(0)
         }
     }
 }
@@ -153,7 +152,7 @@ impl<T: Clone> Polynomial<T> {
     pub fn add_constant_ref<V>(&self, constant: V) -> Polynomial<T> 
     where T: AddAssign<V> {
         let mut data = self.data.clone();
-        data[self.data.len() - 1] += constant;
+        data[0] += constant;
         Polynomial { data }
     }
     
@@ -186,9 +185,9 @@ impl<T: Ring + One + Clone> Polynomial<T> {
         if self.data.len() == 0 {
             return;
         }
-        let _ = self.data.pop();
+        let _ = self.data.remove(0);
         let mut val: T = <T as One>::one() + One::one();
-        for i in (0..self.data.len()).rev() {
+        for i in 0..self.data.len() {
             self.data[i] *= val.clone();
             val += One::one();
         }
@@ -199,6 +198,7 @@ impl<T: Clone + Zero + Eq> Polynomial<T> {
     /// Get the leading coefficient of the polynomial.
     pub fn lc(&self) -> T {
         self.data.iter()
+            .rev()
             .find(|&val| *val != Zero::zero())
             .cloned()
             .unwrap_or(Zero::zero())
@@ -609,13 +609,12 @@ pub fn pseudo_div<T: EuclideanDomain + Eq + Clone>(a_poly: Polynomial<T>, b_poly
         let x_degr_minus_degd = {
             let deg = r.degree() - b_poly.degree();
             let mut v = vec![T::zero(); deg];
-            let mut x = vec![T::one()];
-            x.append(&mut v);
-            Polynomial {data: x}
+            v.push(T::one());
+            Polynomial {data: v}
         };
         let s = x_degr_minus_degd.mul_constant(r.lc());
-        q = q.mul_constant(d.clone()) + s.clone();
-        r = r.mul_constant(d.clone()) - b_poly.clone() * s.clone();
+        q = q.mul_constant_ref(d.clone()) + s.clone();
+        r = r.mul_constant_ref(d.clone()) - b_poly.clone() * s.clone();
         if e != 0 {
             e = e - 1;
         }
@@ -662,8 +661,8 @@ pub fn resultant<T: EuclideanDomain + Eq + Clone>(a_poly: Polynomial<T>, b_poly:
 
     let a = a_poly.cont();
     let b = b_poly.cont();
-    let mut a_poly = a_poly.div_constant(a.clone());
-    let mut b_poly = b_poly.div_constant(b.clone());
+    let mut a_poly = a_poly.div_constant_ref(a.clone());
+    let mut b_poly = b_poly.div_constant_ref(b.clone());
     let mut g = T::one();
     let mut h = T::one();
     let mut s = T::one();
@@ -675,7 +674,7 @@ pub fn resultant<T: EuclideanDomain + Eq + Clone>(a_poly: Polynomial<T>, b_poly:
         let delta = a_poly.degree() - b_poly.degree();
         let (_q, r) = pseudo_div(a_poly.clone(), b_poly.clone());
         a_poly = b_poly;
-        b_poly = r.div_constant(g.clone() * h.clone().pow(delta as u32));
+        b_poly = r.div_constant_ref(g.clone() * h.clone().pow(delta as u32));
         g = a_poly.lc();
         h = h.clone().pow(1 - delta as u32) * g.clone().pow(delta as u32);
         if b_poly.degree() == 0 {
@@ -732,6 +731,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::Polynomial;
+    use super::resultant;
 
     #[test]
     fn new() {
@@ -822,5 +822,32 @@ mod tests {
         check(&[-1, 0, 0, -1], "-1-x^3");
         check(&[-1, 1, 0, -1], "-1+x-x^3");
         check(&[-1, 1, -1, -1], "-1+x-x^2-x^3");
+    }
+    
+    #[test]
+    fn test_resultant() {
+        let a = Polynomial::new(vec![-15i64, 10, 1]);
+        let b = Polynomial::new(vec![10i64, 5, -2]);
+        assert_eq!(resultant(a, b), -3975);
+    }
+
+    #[test]
+    fn test_tricky_mul() {
+        let a = Polynomial::new(vec![0i64, 1, 1, 0]);
+        let b = Polynomial::new(vec![0, 1]);
+        assert_eq!((a * b).data, vec![0, 0, 1, 1]);
+    }
+
+    #[test]
+    fn test_tricky_eq() {
+        // x^2 + x
+        let a = Polynomial::new(vec![0, 1, 1]);
+        // x^2
+        let b = Polynomial::new(vec![0, 0, 1]);
+        // x
+        let c = Polynomial::new(vec![0, 1]);
+    
+        // x^2 + x - x^2 = x
+        assert_eq!(a - b, c);
     }
 }
