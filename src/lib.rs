@@ -107,16 +107,6 @@ impl<T> Polynomial<T> {
     pub fn data(&self) -> &[T] {
         &self.data
     }
-
-    /// Gets the degree of the polynomial.
-    #[inline]
-    pub fn degree(&self) -> usize {
-        if self.data.len() == 0 {
-            0
-        } else {
-            self.data.len() - 1
-        }
-    }
     
     /// Multiply the polynomial by a constant
     pub fn mul_constant<V: Mul<T> + Clone>(self, constant: V) -> Polynomial<<V as Mul<T>>::Output> {
@@ -143,6 +133,18 @@ impl<T> Polynomial<T> {
         let l = self.data.len();
         self.data[l - 1] += constant;
         self
+    }
+}
+
+impl<T: Zero + Eq + Clone> Polynomial<T> {
+    /// Gets the degree of the polynomial.
+    #[inline]
+    pub fn degree(&self) -> usize {
+        if self.data.len() == 0 {
+            0
+        } else {
+            self.data.len() - 1 - self.data.iter().cloned().position(|val| val != T::zero()).unwrap_or(0)
+        }
     }
 }
 
@@ -174,6 +176,21 @@ impl<T: Clone> Polynomial<T> {
                 .cloned()
                 .map(|val| val / constant.clone())
                 .collect()
+        }
+    }
+}
+
+impl<T: Ring + One + Clone> Polynomial<T> {
+    /// Take the derivative of the polynomial.
+    pub fn derivative(&mut self) {
+        if self.data.len() == 0 {
+            return;
+        }
+        let _ = self.data.pop();
+        let mut val: T = <T as One>::one() + One::one();
+        for i in (0..self.data.len()).rev() {
+            self.data[i] *= val.clone();
+            val += One::one();
         }
     }
 }
