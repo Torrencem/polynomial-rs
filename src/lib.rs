@@ -186,7 +186,7 @@ impl<T: Ring + One + Clone> Polynomial<T> {
             return;
         }
         let _ = self.data.remove(0);
-        let mut val: T = <T as One>::one() + One::one();
+        let mut val: T = One::one();
         for i in 0..self.data.len() {
             self.data[i] *= val.clone();
             val += One::one();
@@ -222,9 +222,57 @@ impl<T: Clone + EuclideanDomain + Zero> Polynomial<T> {
     }
 }
 
+impl<T> fmt::Display for Polynomial<T>
+where
+    T: Zero + One + Eq + Neg<Output = T> + fmt::Display + Clone
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let x = "x";
+        if self.is_zero() {
+            return write!(f, "0");
+        }
+
+        let one = One::one();
+        let mut s = Vec::new();
+        for (i, n) in self.data.iter().enumerate() {
+            // output n*x^i / -n*x^i
+            if n.is_zero() {
+                continue;
+            }
+
+            let term = if i.is_zero() {
+                n.to_string()
+            } else if i == 1 {
+                if (*n) == one {
+                    x.to_string()
+                } else if (*n) == -one.clone() {
+                    format!("-{}", x)
+                } else {
+                    format!("{}*{}", n.to_string(), x)
+                }
+            } else {
+                if (*n) == one {
+                    format!("{}^{}", x, i)
+                } else if (*n) == -one.clone() {
+                    format!("-{}^{}", x, i)
+                } else {
+                    format!("{}*{}^{}", n.to_string(), x, i)
+                }
+            };
+
+            if s.len() > 0 {
+                s.push(" + ".to_string());
+            }
+            s.push(term);
+        }
+
+        write!(f, "({})", s.concat())
+    }
+}
+
 impl<T> Polynomial<T>
 where
-    T: Zero + One + Eq + Neg<Output = T> + Ord + fmt::Display + Clone,
+    T: Zero + One + Eq + Neg<Output = T> + fmt::Display + Clone,
 {
     /// Pretty prints the polynomial.
     pub fn pretty(&self, x: &str) -> String {
@@ -260,8 +308,8 @@ where
                 }
             };
 
-            if s.len() > 0 && (*n) > Zero::zero() {
-                s.push("+".to_string());
+            if s.len() > 0 {
+                s.push(" + ".to_string());
             }
             s.push(term);
         }
@@ -624,9 +672,12 @@ pub fn pseudo_div<T: EuclideanDomain + Eq + Clone>(a_poly: Polynomial<T>, b_poly
 }
 
 /// Compute the gcd and bezout coefficients
-pub fn extended_gcd<T: EuclideanDomain + Eq + Clone>(a_poly: Polynomial<T>, b_poly: Polynomial<T>) -> (Polynomial<T>, Polynomial<T>, Polynomial<T>) {
-    // TODO: Fix this
-    assert!(a_poly.degree() >= b_poly.degree());
+pub fn extended_gcd<T: EuclideanDomain + Eq + Clone>(mut a_poly: Polynomial<T>, mut b_poly: Polynomial<T>) -> (Polynomial<T>, Polynomial<T>, Polynomial<T>) {
+    let mut swapped = false;
+    if a_poly.degree() < b_poly.degree() {
+        swapped = true;
+        std::mem::swap(&mut a_poly, &mut b_poly);
+    }
 
     let mut r_prev = a_poly;
     let mut r = b_poly;
@@ -651,7 +702,11 @@ pub fn extended_gcd<T: EuclideanDomain + Eq + Clone>(a_poly: Polynomial<T>, b_po
     }
     
     // (u, v, gcd)
-    (s, t, r)
+    if swapped {
+        (t, s, r)
+    } else {
+        (s, t, r)
+    }
 }
 
 /// Compute the resultant of two polynomials
